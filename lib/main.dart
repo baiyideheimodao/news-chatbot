@@ -136,11 +136,7 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
             height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: Colors.transparent,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.25),
@@ -149,11 +145,10 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
                 ),
               ],
             ),
-            child: const Center(
-              child: Icon(
-                Icons.chat_bubble_outline,
-                color: Colors.white,
-                size: 52,
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/redboy.png',
+                fit: BoxFit.cover,
               ),
             ),
           ),
@@ -361,15 +356,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 50), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    }
   }
 
   String _formatTime(DateTime dateTime) {
@@ -479,6 +468,9 @@ class _ChatPageState extends State<ChatPage> {
             ));
           }
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
         debugPrint('加载了 ${_messages.length} 条聊天记录');
       }
     } catch (e) {
@@ -511,13 +503,6 @@ class _ChatPageState extends State<ChatPage> {
     final Uri uri = Uri.parse('$apiUrl?type=$newsType&limit=$newsLimit');
     debugPrint('Fetching news from: $uri');
     try {
-      // 方案：使用环境变量临时清除代理，执行请求后恢复
-      final String? originalHttpProxy = Platform.environment['http_proxy'];
-      final String? originalHttpsProxy = Platform.environment['https_proxy'];
-      
-      // 清除环境变量中的代理
-      // 注意：Dart 的 Platform.environment 是只读的，需要用其他方式
-      
       // 改用最直接的方式：重新创建 HttpClient 并明确不走代理
       final HttpClient httpClient = HttpClient();
       httpClient.findProxy = (_) => 'DIRECT';
@@ -767,7 +752,6 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Alignment alignment = message.isMine ? Alignment.centerRight : Alignment.centerLeft;
     final Color bubbleColor = message.isMine ? const Color(0xFFDCF8C6) : Colors.white;
     final BorderRadius radius = message.isMine
         ? const BorderRadius.only(
