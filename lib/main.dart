@@ -357,7 +357,7 @@ class _ChatPageState extends State<ChatPage> {
 
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(_scrollController.position.minScrollExtent);
     }
   }
 
@@ -590,32 +590,53 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        title: const Text('聊天窗口'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: _closeChat,
+    return GestureDetector(
+      onPanStart: (_) => windowManager.startDragging(),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.white,
+          title: GestureDetector(
+            onPanStart: (_) => windowManager.startDragging(),
+            onDoubleTap: () async {
+              if (await windowManager.isMaximized()) {
+                await windowManager.unmaximize();
+              } else {
+                await windowManager.maximize();
+              }
+            },
+            child: const Text(
+              '消息',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
           ),
-        ],
-      ),
-      body: Column(
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close, size: 22),
+              onPressed: _closeChat,
+              color: Colors.grey[600],
+            ),
+          ],
+        ),
+        body: Column(
         children: [
           NewsPushBanner(news: _news),
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              reverse: true,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               itemCount: _messages.length,
               itemBuilder: (context, index) {
-                final ChatMessage msg = _messages[index];
-                final ChatMessage? prevMsg = index > 0 ? _messages[index - 1] : null;
+                final int actualIndex = _messages.length - 1 - index;
+                final ChatMessage msg = _messages[actualIndex];
+                final ChatMessage? prevMsg = actualIndex > 0 ? _messages[actualIndex - 1] : null;
                 
-                // 判断是否需要显示时间分隔符（时间超过5分钟）
                 final bool showTimeSeparator = prevMsg != null && 
                     msg.timestamp.difference(prevMsg.timestamp).inMinutes >= 5;
                 
@@ -623,12 +644,13 @@ class _ChatPageState extends State<ChatPage> {
                   children: [
                     if (showTimeSeparator)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Text(
                           _formatTime(msg.timestamp),
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 13,
                             color: Colors.grey[600],
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
                       ),
@@ -641,48 +663,70 @@ class _ChatPageState extends State<ChatPage> {
               },
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 0.5, color: Color(0xFFE5E5EA)),
           SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: const Color(0xFFF2F2F7),
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.grey.shade300),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: TextField(
                         controller: _controller,
                         decoration: const InputDecoration(
-                          hintText: '输入消息...',
+                          hintText: '信息',
+                          hintStyle: TextStyle(
+                            fontSize: 16,
+                            color: Color(0xFFAEAEB2),
+                          ),
                           border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black,
                         ),
                         minLines: 1,
-                        maxLines: 4,
+                        maxLines: 6,
+                        textCapitalization: TextCapitalization.sentences,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
+                  const SizedBox(width: 12),
+                  GestureDetector(
+                    onTap: _sendMessage,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF0A84FF), Color(0xFF5AC8FA)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      child: const Icon(
+                        Icons.arrow_upward,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
-                    onPressed: _sendMessage,
-                    child: const Text('发送'),
                   ),
                 ],
               ),
             ),
           )
         ],
+      ),
       ),
     );
   }
@@ -696,22 +740,38 @@ class NewsPushBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.blue.shade600,
-        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade600, Colors.blue.shade500],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: const [
-              Icon(Icons.campaign, color: Colors.white, size: 28),
+              Icon(Icons.campaign, color: Colors.white, size: 24),
               SizedBox(width: 12),
               Text(
                 '今日新闻推送',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  letterSpacing: 0.2,
+                ),
               ),
             ],
           ),
@@ -719,22 +779,37 @@ class NewsPushBanner extends StatelessWidget {
           if (news.isEmpty)
             const Text(
               '暂无新闻数据',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
             )
           else
             ...news.map((item) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     item.title,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     item.content,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -752,48 +827,121 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bubbleColor = message.isMine ? const Color(0xFFDCF8C6) : Colors.white;
-    final BorderRadius radius = message.isMine
-        ? const BorderRadius.only(
-            topLeft: Radius.circular(18),
-            topRight: Radius.circular(18),
-            bottomLeft: Radius.circular(18),
-          )
-        : const BorderRadius.only(
-            topLeft: Radius.circular(18),
-            topRight: Radius.circular(18),
-            bottomRight: Radius.circular(18),
-          );
-
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisAlignment: message.isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: bubbleColor,
-                borderRadius: radius,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+          if (!message.isMine) ...[
+            const SizedBox(width: 4),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey,
               ),
-              child: Text(
-                message.text,
-                style: const TextStyle(fontSize: 15, height: 1.4),
+              child: const Icon(
+                Icons.person,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: CustomPaint(
+              painter: message.isMine 
+                  ? SentMessageBubblePainter()
+                  : ReceivedMessageBubblePainter(),
+              child: Container(
+                padding: EdgeInsets.only(
+                  left: message.isMine ? 16 : 20,
+                  right: message.isMine ? 20 : 16,
+                  top: 10,
+                  bottom: 10,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: message.isMine
+                      ? const LinearGradient(
+                          colors: [Color(0xFF0A84FF), Color(0xFF5AC8FA)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        )
+                      : null,
+                  color: message.isMine ? null : const Color(0xFFE5E5EA),
+                ),
+                child: Text(
+                  message.text,
+                  style: TextStyle(
+                    fontSize: 16,
+                    height: 1.3,
+                    color: message.isMine ? Colors.white : Colors.black,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
               ),
             ),
           ),
+          if (message.isMine) ...[
+            const SizedBox(width: 8),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.blue[300],
+              ),
+              child: const Icon(
+                Icons.person,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
         ],
       ),
     );
   }
+}
+
+class SentMessageBubblePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFF0A84FF);
+    final path = Path();
+    
+    path.moveTo(size.width - 8, size.height - 16);
+    path.lineTo(size.width, size.height - 12);
+    path.lineTo(size.width - 8, size.height - 8);
+    path.close();
+    
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
+}
+
+class ReceivedMessageBubblePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFFE5E5EA);
+    final path = Path();
+    
+    path.moveTo(8, size.height - 16);
+    path.lineTo(0, size.height - 12);
+    path.lineTo(8, size.height - 8);
+    path.close();
+    
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 
 class NewsMessageBubble extends StatelessWidget {
@@ -804,51 +952,71 @@ class NewsMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(Icons.campaign, color: Colors.blue.shade600, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message.newsTitle ?? '新闻推送',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue.shade700,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            message.newsContent ?? '',
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-              height: 1.5,
+          const SizedBox(width: 4),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.orange,
             ),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            child: const Icon(
+              Icons.article,
+              size: 16,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.campaign, color: Colors.blue[600], size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          message.newsTitle ?? '新闻推送',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    message.newsContent ?? '',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[800],
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
