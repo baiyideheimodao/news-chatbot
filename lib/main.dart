@@ -19,6 +19,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
 
+  // 加载用户设置
+  final settingsManager = SettingsManager();
+  await settingsManager.loadSettings();
+
   const WindowOptions options = WindowOptions(
     size: Size(120, 120),
     minimumSize: Size(120, 120),
@@ -79,11 +83,59 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
     super.dispose();
   }
 
-  void _openChatWindow() async {
-    // 获取当前悬浮窗的位置
-    final Rect currentBounds = await windowManager.getBounds();
+  void _onBubbleTap() {
+    // 检查是否已完成初始设置
+    final settings = SettingsManager().settings;
+    final hasCompletedSetup = settings.avatarPath.isNotEmpty && 
+                              settings.interest.isNotEmpty;
+    
+    if (hasCompletedSetup) {
+      // 已完成设置，直接打开聊天窗口
+      _openChatWindow();
+    } else {
+      // 未完成设置，打开初始设置页面
+      _openInitialSetupWindow();
+    }
+  }
 
-    // 计算聊天窗口位置：悬浮窗右下角偏移一点
+  void _openInitialSetupWindow() async {
+    final Rect currentBounds = await windowManager.getBounds();
+    const double settingsWidth = 500;
+    const double settingsHeight = 600;
+    const double offsetX = 20;
+    const double offsetY = 20;
+
+    double settingsX = currentBounds.right + offsetX;
+    double settingsY = currentBounds.bottom + offsetY;
+    const double screenWidth = 1920;
+    const double screenHeight = 1080;
+
+    if (settingsX + settingsWidth > screenWidth) {
+      settingsX = currentBounds.left - settingsWidth - offsetX;
+    }
+    if (settingsY + settingsHeight > screenHeight) {
+      settingsY = currentBounds.top - settingsHeight - offsetY;
+    }
+    settingsX = settingsX.clamp(0, screenWidth - settingsWidth);
+    settingsY = settingsY.clamp(0, screenHeight - settingsHeight);
+
+    await windowManager.setMinimumSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setMaximumSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setBackgroundColor(Colors.white);
+    await windowManager.setHasShadow(true);
+    await windowManager.setAlwaysOnTop(true);
+    await windowManager.setAsFrameless();
+    await windowManager.setBounds(Rect.fromLTWH(settingsX, settingsY, settingsWidth, settingsHeight));
+
+    if (!mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const InitialSetupPage(),
+    ));
+  }
+
+  void _openChatWindow() async {
+    final Rect currentBounds = await windowManager.getBounds();
     const double chatWidth = 640;
     const double chatHeight = 720;
     const double offsetX = 20;
@@ -91,8 +143,6 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
 
     double chatX = currentBounds.right + offsetX;
     double chatY = currentBounds.bottom + offsetY;
-
-    // 简单边界检查（假设屏幕尺寸至少 1920x1080）
     const double screenWidth = 1920;
     const double screenHeight = 1080;
 
@@ -102,7 +152,6 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
     if (chatY + chatHeight > screenHeight) {
       chatY = currentBounds.top - chatHeight - offsetY;
     }
-
     chatX = chatX.clamp(0, screenWidth - chatWidth);
     chatY = chatY.clamp(0, screenHeight - chatHeight);
 
@@ -121,13 +170,15 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
     ));
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onPanStart: (_) {
         windowManager.startDragging();
       },
-      onTap: _openChatWindow,
+      onTap: _onBubbleTap,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Center(
@@ -174,22 +225,74 @@ class _ChatPageState extends State<ChatPage> {
   ];
   final List<NewsItem> _news = <NewsItem>[];
   Timer? _pollTimer;
-  String _chatBuffer = ''; // 新增：聊天缓冲区
-  String _currentEvent = ''; // SSE 事件类型追踪
-  DateTime? _lastNewsRequestTime; // 上次新闻请求时间
+  String _chatBuffer = '';
+  String _currentEvent = '';
+  DateTime? _lastNewsRequestTime;
+  late UserSettings _settings;
 
   @override
   void initState() {
     super.initState();
-    _loadMessages(); // 加载本地聊天记录
-    _initializeNews(); // 检查并初始化新闻
-    _pollTimer = Timer.periodic(pollInterval, (_) => _checkAndFetchNews()); // 定期检查是否需要更新
+    _settings = SettingsManager().settings;
+    SettingsManager().addListener(_onSettingsChanged);
+    _loadMessages();
+    _initializeNews();
+    _pollTimer = Timer.periodic(
+      Duration(minutes: _settings.newsIntervalMinutes),
+      (_) => _checkAndFetchNews(),
+    );
   }
 
   @override
   void dispose() {
+    SettingsManager().removeListener(_onSettingsChanged);
     _pollTimer?.cancel();
     super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    setState(() {
+      _settings = SettingsManager().settings;
+    });
+    // 重新设置定时器
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(
+      Duration(minutes: _settings.newsIntervalMinutes),
+      (_) => _checkAndFetchNews(),
+    );
+  }
+
+  void _openSettings() async {
+    // 获取当前聊天窗口位置
+    final Rect currentBounds = await windowManager.getBounds();
+    
+    const double settingsWidth = 500;
+    const double settingsHeight = 600;
+
+    // 计算设置窗口位置：以聊天窗口中心为基准，保持视觉连续性
+    double settingsX = currentBounds.left + (currentBounds.width - settingsWidth) / 2;
+    double settingsY = currentBounds.top + (currentBounds.height - settingsHeight) / 2;
+    
+    const double screenWidth = 1920;
+    const double screenHeight = 1080;
+
+    // 确保窗口在屏幕范围内
+    settingsX = settingsX.clamp(0, screenWidth - settingsWidth);
+    settingsY = settingsY.clamp(0, screenHeight - settingsHeight);
+
+    await windowManager.setMinimumSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setMaximumSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setSize(const Size(settingsWidth, settingsHeight));
+    await windowManager.setBackgroundColor(Colors.white);
+    await windowManager.setHasShadow(true);
+    await windowManager.setAlwaysOnTop(true);
+    await windowManager.setAsFrameless();
+    await windowManager.setBounds(Rect.fromLTWH(settingsX, settingsY, settingsWidth, settingsHeight));
+
+    if (!mounted) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const SettingsTabPage(),
+    ));
   }
 
   void _sendMessage() {
@@ -434,14 +537,17 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _checkAndFetchNews() async {
     final now = DateTime.now();
     
+    // 获取当前设置的轮询间隔
+    final currentPollInterval = Duration(minutes: _settings.newsIntervalMinutes);
+    
     // 如果没有上次请求时间，或者间隔超过轮询时间，则请求新闻
     if (_lastNewsRequestTime == null || 
-        now.difference(_lastNewsRequestTime!).compareTo(pollInterval) >= 0) {
+        now.difference(_lastNewsRequestTime!).compareTo(currentPollInterval) >= 0) {
       debugPrint('满足新闻请求条件，准备获取新闻');
       await _fetchNews();
       await _saveLastNewsTime(now);
     } else {
-      final remaining = pollInterval - now.difference(_lastNewsRequestTime!);
+      final remaining = currentPollInterval - now.difference(_lastNewsRequestTime!);
       debugPrint('新闻请求冷却中，距下次更新还需 ${remaining.inMinutes} 分钟');
     }
   }
@@ -500,7 +606,9 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _fetchNews() async {
-    final Uri uri = Uri.parse('$apiUrl?type=$newsType&limit=$newsLimit');
+    // 使用用户设置的感兴趣方向
+    final String currentNewsType = _settings.interest;
+    final Uri uri = Uri.parse('$apiUrl?type=$currentNewsType&limit=$newsLimit');
     debugPrint('Fetching news from: $uri');
     try {
       // 改用最直接的方式：重新创建 HttpClient 并明确不走代理
@@ -597,6 +705,11 @@ class _ChatPageState extends State<ChatPage> {
         appBar: AppBar(
           elevation: 0,
           backgroundColor: Colors.white,
+          leading: IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 22),
+            onPressed: _openSettings,
+            color: Colors.grey[600],
+          ),
           title: GestureDetector(
             onPanStart: (_) => windowManager.startDragging(),
             onDoubleTap: () async {
@@ -615,13 +728,13 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.close, size: 22),
-              onPressed: _closeChat,
-              color: Colors.grey[600],
-            ),
-          ],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.close, size: 22),
+            onPressed: _closeChat,
+            color: Colors.grey[600],
+          ),
+        ],
         ),
         body: Column(
         children: [
@@ -840,12 +953,12 @@ class ChatBubble extends StatelessWidget {
               height: 28,
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.grey,
               ),
-              child: const Icon(
-                Icons.person,
-                size: 18,
-                color: Colors.white,
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/avatar1.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -888,16 +1001,17 @@ class ChatBubble extends StatelessWidget {
           if (message.isMine) ...[
             const SizedBox(width: 8),
             Container(
-              width: 28,
-              height: 28,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.blue[300],
+                border: Border.all(color: Colors.grey.shade200, width: 1),
               ),
-              child: const Icon(
-                Icons.person,
-                size: 18,
-                color: Colors.white,
+              child: ClipOval(
+                child: Image.asset(
+                  SettingsManager().settings.avatarPath,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(width: 4),
@@ -1050,3 +1164,966 @@ class NewsItem {
   final String title;
   final String content;
 }
+
+// ==================== 用户设置 ====================
+
+class UserSettings {
+  String avatarPath;
+  String interest;
+  int newsIntervalMinutes;
+
+  UserSettings({
+    this.avatarPath = 'assets/images/avatar2.png',
+    this.interest = 'AI',
+    this.newsIntervalMinutes = 30,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'avatarPath': avatarPath,
+    'interest': interest,
+    'newsIntervalMinutes': newsIntervalMinutes,
+  };
+
+  factory UserSettings.fromJson(Map<String, dynamic> json) => UserSettings(
+    avatarPath: json['avatarPath'] ?? 'assets/images/avatar2.png',
+    interest: json['interest'] ?? 'AI',
+    newsIntervalMinutes: json['newsIntervalMinutes'] ?? 30,
+  );
+}
+
+// 全局设置管理
+class SettingsManager {
+  static final SettingsManager _instance = SettingsManager._internal();
+  factory SettingsManager() => _instance;
+  SettingsManager._internal();
+
+  UserSettings settings = UserSettings();
+  final List<VoidCallback> _listeners = [];
+
+  void addListener(VoidCallback listener) => _listeners.add(listener);
+  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+  void notifyListeners() {
+    for (var listener in _listeners) {
+      listener();
+    }
+  }
+
+  Future<void> loadSettings() async {
+    try {
+      final appDataDir = Directory.systemTemp;
+      final file = File('${appDataDir.path}/flutter_chat/settings.json');
+      if (await file.exists()) {
+        final contents = await file.readAsString();
+        final json = jsonDecode(contents);
+        settings = UserSettings.fromJson(json);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('加载设置失败: $e');
+    }
+  }
+
+  Future<void> saveSettings() async {
+    try {
+      final appDataDir = Directory.systemTemp;
+      final dir = Directory('${appDataDir.path}/flutter_chat');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
+      }
+      final file = File('${dir.path}/settings.json');
+      await file.writeAsString(jsonEncode(settings.toJson()));
+    } catch (e) {
+      debugPrint('保存设置失败: $e');
+    }
+  }
+}
+
+// ==================== 初始设置页面（只展示一次） ====================
+
+class InitialSetupPage extends StatefulWidget {
+  const InitialSetupPage({super.key});
+
+  @override
+  State<InitialSetupPage> createState() => _InitialSetupPageState();
+}
+
+class _InitialSetupPageState extends State<InitialSetupPage> {
+  int _currentStep = 0;
+  String _selectedAvatar = 'assets/images/avatar2.png';
+  String _selectedInterest = 'AI';
+  double _newsInterval = 30;
+
+  final List<String> _interests = ['AI', '科技', '财经', '体育', '娱乐', '健康'];
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onPanStart: (_) => windowManager.startDragging(),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, size: 20),
+            onPressed: () => _backToBubble(),
+            color: Colors.grey[600],
+          ),
+          title: GestureDetector(
+            onPanStart: (_) => windowManager.startDragging(),
+            child: const Text(
+              '初始设置',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 进度指示器
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
+                child: Row(
+                  children: [
+                    _buildStepIndicator(0, '头像'),
+                    _buildStepLine(0),
+                    _buildStepIndicator(1, '兴趣'),
+                    _buildStepLine(1),
+                    _buildStepIndicator(2, '推送'),
+                  ],
+                ),
+              ),
+              // 内容区域
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: _buildCurrentStep(),
+                ),
+              ),
+              // 底部按钮
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (_currentStep > 0)
+                      TextButton(
+                        onPressed: () => setState(() => _currentStep--),
+                        child: const Text('上一步', style: TextStyle(fontSize: 16)),
+                      )
+                    else
+                      const SizedBox(width: 80),
+                    Row(
+                      children: [
+                        if (_currentStep < 2)
+                          TextButton(
+                            onPressed: () => _finishSetup(),
+                            child: const Text('跳过', style: TextStyle(fontSize: 16, color: Colors.grey)),
+                          ),
+                        const SizedBox(width: 16),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (_currentStep < 2) {
+                              setState(() => _currentStep++);
+                            } else {
+                              _finishSetup();
+                            }
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0A84FF),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(_currentStep < 2 ? '下一步' : '完成', style: const TextStyle(fontSize: 16)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepIndicator(int step, String label) {
+    final isActive = step <= _currentStep;
+    return Column(
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              '${step + 1}',
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.grey.shade600,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: isActive ? const Color(0xFF0A84FF) : Colors.grey.shade600,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepLine(int step) {
+    final isActive = step < _currentStep;
+    return Expanded(
+      child: Container(
+        height: 2,
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        color: isActive ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+      ),
+    );
+  }
+
+  Widget _buildCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+        return _buildAvatarStep();
+      case 1:
+        return _buildInterestStep();
+      case 2:
+        return _buildIntervalStep();
+      default:
+        return _buildAvatarStep();
+    }
+  }
+
+  // 步骤1：选择头像（macOS风格并排显示）
+  Widget _buildAvatarStep() {
+    return Padding(
+      key: const ValueKey(0),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '选择一个头像',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '这将作为您在聊天中的头像显示',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 60),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildAvatarOption('assets/images/avatar2.png', '头像 1'),
+              const SizedBox(width: 40),
+              _buildAvatarOption('assets/images/avatar3.png', '头像 2'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarOption(String path, String label) {
+    final isSelected = _selectedAvatar == path;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedAvatar = path),
+      child: Column(
+        children: [
+          Container(
+            width: 140,
+            height: 140,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF0A84FF) : Colors.transparent,
+                width: 4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                path,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF0A84FF) : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 步骤2：选择感兴趣的方向
+  Widget _buildInterestStep() {
+    return Padding(
+      key: const ValueKey(1),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '您感兴趣的方向？',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '我们将为您推送相关领域的新闻',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 50),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: _interests.map((interest) => _buildInterestChip(interest)).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInterestChip(String interest) {
+    final isSelected = _selectedInterest == interest;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedInterest = interest),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0A84FF) : Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+            width: 2,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF0A84FF).withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          interest,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 步骤3：新闻推送间隔
+  Widget _buildIntervalStep() {
+    return Padding(
+      key: const ValueKey(2),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '新闻推送频率',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '我们将按此频率为您推送最新资讯',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 60),
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Text(
+                  '${_newsInterval.toInt()} 分钟',
+                  style: const TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0A84FF),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '每 ${_newsInterval.toInt()} 分钟检查一次新消息',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                Slider(
+                  value: _newsInterval,
+                  min: 10,
+                  max: 120,
+                  divisions: 11,
+                  activeColor: const Color(0xFF0A84FF),
+                  inactiveColor: Colors.grey.shade200,
+                  onChanged: (value) => setState(() => _newsInterval = value),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('10分钟', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    Text('120分钟', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _finishSetup() async {
+    final manager = SettingsManager();
+    manager.settings.avatarPath = _selectedAvatar;
+    manager.settings.interest = _selectedInterest;
+    manager.settings.newsIntervalMinutes = _newsInterval.toInt();
+    await manager.saveSettings();
+    manager.notifyListeners();
+
+    // 初始设置完成后，回到悬浮窗
+    _backToBubble();
+  }
+
+  void _backToBubble() async {
+    // 恢复悬浮窗大小
+    const double bubbleSize = 120;
+    final Rect currentBounds = await windowManager.getBounds();
+    
+    await windowManager.setMinimumSize(const Size(bubbleSize, bubbleSize));
+    await windowManager.setMaximumSize(const Size(bubbleSize, bubbleSize));
+    await windowManager.setSize(const Size(bubbleSize, bubbleSize));
+    await windowManager.setBackgroundColor(Colors.transparent);
+    await windowManager.setHasShadow(false);
+    await windowManager.setBounds(Rect.fromLTWH(
+      currentBounds.left + (currentBounds.width - bubbleSize) / 2,
+      currentBounds.top + (currentBounds.height - bubbleSize) / 2,
+      bubbleSize,
+      bubbleSize,
+    ));
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+}
+
+// ==================== Tab设置页面（从聊天页进入） ====================
+
+class SettingsTabPage extends StatefulWidget {
+  const SettingsTabPage({super.key});
+
+  @override
+  State<SettingsTabPage> createState() => _SettingsTabPageState();
+}
+
+class _SettingsTabPageState extends State<SettingsTabPage> {
+  int _currentTab = 0;
+  late String _selectedAvatar;
+  late String _selectedInterest;
+  late double _newsInterval;
+
+  final List<String> _interests = ['AI', '科技', '财经', '体育', '娱乐', '健康'];
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = SettingsManager().settings;
+    _selectedAvatar = settings.avatarPath;
+    _selectedInterest = settings.interest;
+    _newsInterval = settings.newsIntervalMinutes.toDouble();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onPanStart: (_) => windowManager.startDragging(),
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF2F2F7),
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, size: 20),
+            onPressed: () => _backToChat(),
+            color: Colors.grey[600],
+          ),
+          title: GestureDetector(
+            onPanStart: (_) => windowManager.startDragging(),
+            child: const Text(
+              '个人设置',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+        body: Column(
+          children: [
+            // Tab栏
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  _buildTab(0, '头像'),
+                  _buildTab(1, '兴趣'),
+                  _buildTab(2, '推送'),
+                ],
+              ),
+            ),
+            // 内容区域
+            Expanded(
+              child: _buildTabContent(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTab(int index, String label) {
+    final isSelected = _currentTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _currentTab = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              color: isSelected ? const Color(0xFF0A84FF) : Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabContent() {
+    switch (_currentTab) {
+      case 0:
+        return _buildAvatarTab();
+      case 1:
+        return _buildInterestTab();
+      case 2:
+        return _buildIntervalTab();
+      default:
+        return _buildAvatarTab();
+    }
+  }
+
+  Widget _buildAvatarTab() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '选择头像',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 40),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildAvatarOption('assets/images/avatar2.png', '头像 1'),
+              const SizedBox(width: 40),
+              _buildAvatarOption('assets/images/avatar3.png', '头像 2'),
+            ],
+          ),
+          const SizedBox(height: 60),
+          ElevatedButton(
+            onPressed: () {
+              _saveCurrentTabSettings();
+              // 停留在当前页面，可以切换到其他tab
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0A84FF),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('完成', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatarOption(String path, String label) {
+    final isSelected = _selectedAvatar == path;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedAvatar = path),
+      child: Column(
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isSelected ? const Color(0xFF0A84FF) : Colors.transparent,
+                width: 4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                path,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF0A84FF) : Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInterestTab() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '感兴趣的方向',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '选择您感兴趣的领域',
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 40),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: _interests.map((interest) => _buildInterestChip(interest)).toList(),
+          ),
+          const SizedBox(height: 60),
+          ElevatedButton(
+            onPressed: () {
+              _saveCurrentTabSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0A84FF),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('完成', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInterestChip(String interest) {
+    final isSelected = _selectedInterest == interest;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedInterest = interest),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0A84FF) : Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+            width: 2,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF0A84FF).withOpacity(0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          interest,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntervalTab() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text(
+            '推送频率',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w600,
+              color: Colors.black,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '设置新闻推送的时间间隔',
+            style: TextStyle(
+              fontSize: 15,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 50),
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Text(
+                  '${_newsInterval.toInt()} 分钟',
+                  style: const TextStyle(
+                    fontSize: 42,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0A84FF),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '每 ${_newsInterval.toInt()} 分钟检查一次',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Slider(
+                  value: _newsInterval,
+                  min: 10,
+                  max: 120,
+                  divisions: 11,
+                  activeColor: const Color(0xFF0A84FF),
+                  inactiveColor: Colors.grey.shade200,
+                  onChanged: (value) => setState(() => _newsInterval = value),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('10分钟', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                    Text('120分钟', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 50),
+          ElevatedButton(
+            onPressed: () {
+              _saveCurrentTabSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0A84FF),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('完成', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveCurrentTabSettings() async {
+    final manager = SettingsManager();
+    manager.settings.avatarPath = _selectedAvatar;
+    manager.settings.interest = _selectedInterest;
+    manager.settings.newsIntervalMinutes = _newsInterval.toInt();
+    await manager.saveSettings();
+    manager.notifyListeners();
+
+    // 显示保存成功提示
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('设置已保存'),
+        duration: Duration(seconds: 1),
+        backgroundColor: Color(0xFF0A84FF),
+      ),
+    );
+  }
+
+  void _backToChat() async {
+    // 保存设置
+    _saveCurrentTabSettings();
+
+    // 恢复聊天窗口大小
+    const double chatWidth = 640;
+    const double chatHeight = 720;
+    final Rect currentBounds = await windowManager.getBounds();
+    
+    await windowManager.setMinimumSize(const Size(chatWidth, chatHeight));
+    await windowManager.setMaximumSize(const Size(chatWidth, chatHeight));
+    await windowManager.setSize(const Size(chatWidth, chatHeight));
+    await windowManager.setBackgroundColor(const Color(0xFFF2F2F7));
+    await windowManager.setHasShadow(true);
+    await windowManager.setBounds(Rect.fromLTWH(
+      currentBounds.left + (currentBounds.width - chatWidth) / 2,
+      currentBounds.top + (currentBounds.height - chatHeight) / 2,
+      chatWidth,
+      chatHeight,
+    ));
+
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+}
+
+
