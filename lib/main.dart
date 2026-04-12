@@ -293,11 +293,25 @@ class _ChatPageState extends State<ChatPage> {
     ));
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final String text = _controller.text.trim();
     if (text.isEmpty) {
       return;
     }
+
+    // 检查是否是打开软件的命令
+    final String lowerText = text.toLowerCase();
+    if (lowerText == '打开钉钉' || lowerText == '钉钉') {
+      _controller.clear();
+      await _openApplication('钉钉');
+      return;
+    }
+    if (lowerText == '打开浏览器' || lowerText == '浏览器' || lowerText == '打开chrome' || lowerText == 'chrome') {
+      _controller.clear();
+      await _openApplication('浏览器');
+      return;
+    }
+
     setState(() {
       _messages.add(ChatMessage(text: text, isMine: true, timestamp: DateTime.now()));
       _controller.clear();
@@ -306,6 +320,48 @@ class _ChatPageState extends State<ChatPage> {
     _scrollToBottom();
     // 调用流式聊天
     _streamChat(text);
+  }
+
+  Future<void> _openApplication(String appName) async {
+    try {
+      if (Platform.isWindows) {
+        if (appName == '钉钉') {
+          // 尝试多种方式打开钉钉
+          await Process.run('powershell', ['/c', 'start', 'dingtalk']);
+        } else if (appName == '浏览器') {
+          // 打开默认浏览器
+          await Process.run('powershell', ['/c', 'start', 'chrome']);
+        }
+      } else if (Platform.isMacOS) {
+        if (appName == '钉钉') {
+          await Process.run('open', ['-a', '钉钉']);
+        } else if (appName == '浏览器') {
+          await Process.run('open', ['-a', 'Google Chrome']);
+        }
+      }
+      
+      // 显示提示消息
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('正在打开$appName...'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: const Color(0xFF0A84FF),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('打开$appName失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('打开$appName失败'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _streamChat(String userMessage) async {
@@ -712,8 +768,10 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onPanStart: (_) => windowManager.startDragging(),
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF2F2F7),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF2F2F7),
         appBar: AppBar(
           elevation: 0,
           backgroundColor: Colors.white,
@@ -795,33 +853,38 @@ class _ChatPageState extends State<ChatPage> {
               color: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Container(
+                      height: 36,
                       decoration: BoxDecoration(
                         color: const Color(0xFFF2F2F7),
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: TextField(
                         controller: _controller,
                         decoration: const InputDecoration(
-                          hintText: '信息',
+                          hintText: '',
                           hintStyle: TextStyle(
                             fontSize: 16,
                             color: Color(0xFFAEAEB2),
                           ),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                          isDense: true,
                         ),
                         style: const TextStyle(
                           fontSize: 16,
                           color: Colors.black,
+                          height: 1.2,
                         ),
+                        textAlignVertical: TextAlignVertical.center,
                         minLines: 1,
-                        maxLines: 6,
+                        maxLines: 1,
                         textCapitalization: TextCapitalization.sentences,
+                        cursorHeight: 18,
                       ),
                     ),
                   ),
@@ -853,20 +916,27 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       ),
+      ),
     );
   }
 }
 
-class NewsPushBanner extends StatelessWidget {
+class NewsPushBanner extends StatefulWidget {
   const NewsPushBanner({required this.news, super.key});
 
   final List<NewsItem> news;
 
   @override
+  State<NewsPushBanner> createState() => _NewsPushBannerState();
+}
+
+class _NewsPushBannerState extends State<NewsPushBanner> {
+  bool _isExpanded = true;
+
+  @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [Colors.blue.shade600, Colors.blue.shade500],
@@ -883,62 +953,85 @@ class NewsPushBanner extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
-              Icon(Icons.campaign, color: Colors.white, size: 24),
-              SizedBox(width: 12),
-              Text(
-                '今日新闻推送',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (news.isEmpty)
-            const Text(
-              '暂无新闻数据',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-            )
-          else
-            ...news.map((item) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          // 可点击的标题栏
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Text(
-                    item.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      height: 1.4,
+                  const Icon(Icons.campaign, color: Colors.white, size: 24),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '今日新闻推送',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        letterSpacing: 0.2,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.content,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  Icon(
+                    _isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    color: Colors.white,
+                    size: 24,
                   ),
                 ],
               ),
-            )),
+            ),
+          ),
+          // 新闻内容（可折叠）
+          if (_isExpanded)
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.news.isEmpty)
+                    const Text(
+                      '暂无新闻数据',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    )
+                  else
+                    ...widget.news.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item.content,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    )),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1316,8 +1409,10 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onPanStart: (_) => windowManager.startDragging(),
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF2F2F7),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF2F2F7),
         appBar: AppBar(
           elevation: 0,
           backgroundColor: Colors.transparent,
@@ -1345,6 +1440,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildStepIndicator(0, '头像'),
                     _buildStepLine(0),
@@ -1370,7 +1466,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
                     if (_currentStep > 0)
                       TextButton(
                         onPressed: () => setState(() => _currentStep--),
-                        child: const Text('上一步', style: TextStyle(fontSize: 16)),
+                        child: const Text('上一步', style: TextStyle(fontSize: 16, color: Color(0xFF0A84FF))),
                       )
                     else
                       const SizedBox(width: 80),
@@ -1394,7 +1490,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
                             backgroundColor: const Color(0xFF0A84FF),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                           ),
                           child: Text(_currentStep < 2 ? '下一步' : '完成', style: const TextStyle(fontSize: 16)),
                         ),
@@ -1407,12 +1503,14 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
   Widget _buildStepIndicator(int step, String label) {
     final isActive = step <= _currentStep;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 36,
@@ -1449,9 +1547,12 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
     final isActive = step < _currentStep;
     return Expanded(
       child: Container(
-        height: 2,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-        color: isActive ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+        height: 36,
+        alignment: Alignment.center,
+        child: Container(
+          height: 2,
+          color: isActive ? const Color(0xFF0A84FF) : Colors.grey.shade300,
+        ),
       ),
     );
   }
@@ -1647,7 +1748,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
           ),
           const SizedBox(height: 12),
           Text(
-            '我们将按此频率为您推送最新资讯',
+            '我们将按此频率为您推送最新行业简报',
             style: TextStyle(
               fontSize: 16,
               color: Colors.grey.shade600,
@@ -1679,7 +1780,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '每 ${_newsInterval.toInt()} 分钟检查一次新消息',
+                  '每 ${_newsInterval.toInt()} 分钟推送一次新消息',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade600,
@@ -1776,8 +1877,10 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onPanStart: (_) => windowManager.startDragging(),
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF2F2F7),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF2F2F7),
         appBar: AppBar(
           elevation: 0,
           backgroundColor: Colors.transparent,
@@ -1821,6 +1924,7 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -2051,8 +2155,8 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          const SizedBox(height: 30),
           const Text(
             '推送频率',
             style: TextStyle(
@@ -2061,7 +2165,7 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
               color: Colors.black,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             '设置新闻推送的时间间隔',
             style: TextStyle(
@@ -2069,9 +2173,9 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
               color: Colors.grey.shade600,
             ),
           ),
-          const SizedBox(height: 50),
+          const SizedBox(height: 24),
           Container(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
@@ -2088,20 +2192,20 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
                 Text(
                   '${_newsInterval.toInt()} 分钟',
                   style: const TextStyle(
-                    fontSize: 42,
+                    fontSize: 36,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF0A84FF),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
-                  '每 ${_newsInterval.toInt()} 分钟检查一次',
+                  '每 ${_newsInterval.toInt()} 分钟推送一次',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     color: Colors.grey.shade600,
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 Slider(
                   value: _newsInterval,
                   min: 10,
@@ -2121,17 +2225,17 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
               ],
             ),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 16),
           // 清除缓存按钮
           TextButton.icon(
             onPressed: () => _showClearCacheDialog(),
-            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
             label: const Text(
               '清除所有缓存',
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(color: Colors.red, fontSize: 13),
             ),
           ),
-          const SizedBox(height: 20),
+          const Spacer(),
           ElevatedButton(
             onPressed: () {
               _saveCurrentTabSettings();
@@ -2139,11 +2243,12 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF0A84FF),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
             ),
-            child: const Text('完成', style: TextStyle(fontSize: 16)),
+            child: const Text('完成', style: TextStyle(fontSize: 15)),
           ),
+          const SizedBox(height: 20),
         ],
       ),
     );
