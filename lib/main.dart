@@ -86,10 +86,8 @@ class _FloatingBubblePageState extends State<FloatingBubblePage>
   void _onBubbleTap() {
     // 检查是否已完成初始设置
     final settings = SettingsManager().settings;
-    final hasCompletedSetup = settings.avatarPath.isNotEmpty && 
-                              settings.interest.isNotEmpty;
     
-    if (hasCompletedSetup) {
+    if (settings.hasCompletedSetup) {
       // 已完成设置，直接打开聊天窗口
       _openChatWindow();
     } else {
@@ -323,7 +321,15 @@ class _ChatPageState extends State<ChatPage> {
     if (_news.isNotEmpty) {
       final List<String> newsLines = <String>[];
       for (int i = 0; i < _news.length; i++) {
-        newsLines.add('第${i + 1}条新闻：${_news[i].title}\n${_news[i].content}');
+        final news = _news[i];
+        final StringBuffer sb = StringBuffer();
+        sb.writeln('第${i + 1}条新闻：');
+        sb.writeln('标题：${news.title}');
+        sb.writeln('内容：${news.content}');
+        if (news.pageContent != null && news.pageContent!.isNotEmpty) {
+          sb.writeln('详情：${news.pageContent}');
+        }
+        newsLines.add(sb.toString());
       }
       requestBody['context'] = newsLines.join('\n\n');
     }
@@ -641,6 +647,9 @@ class _ChatPageState extends State<ChatPage> {
               final newsItem = NewsItem(
                 title: item['title'] ?? '无标题',
                 content: item['content'] ?? '无内容',
+                titleZh: item['title_zh'],
+                contentZh: item['content_zh'],
+                pageContent: item['page_content'],
               );
               _news.add(newsItem);
               // 将新闻添加到聊天记录中
@@ -650,6 +659,9 @@ class _ChatPageState extends State<ChatPage> {
                 type: MessageType.news,
                 newsTitle: newsItem.title,
                 newsContent: newsItem.content,
+                newsTitleZh: newsItem.titleZh,
+                newsContentZh: newsItem.contentZh,
+                newsPageContent: newsItem.pageContent,
                 timestamp: DateTime.now(),
               ));
             }
@@ -1128,6 +1140,32 @@ class NewsMessageBubble extends StatelessWidget {
                       height: 1.4,
                     ),
                   ),
+                  if (message.newsTitleZh != null || message.newsContentZh != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      height: 1,
+                      color: Colors.grey[300],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      message.newsTitleZh ?? '',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      message.newsContentZh ?? '',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[700],
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1147,6 +1185,9 @@ class ChatMessage {
     this.type = MessageType.chat,
     this.newsTitle,
     this.newsContent,
+    this.newsTitleZh,
+    this.newsContentZh,
+    this.newsPageContent,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
@@ -1155,14 +1196,26 @@ class ChatMessage {
   final MessageType type;
   final String? newsTitle;
   final String? newsContent;
+  final String? newsTitleZh;
+  final String? newsContentZh;
+  final String? newsPageContent;
   final DateTime timestamp;
 }
 
 class NewsItem {
-  NewsItem({required this.title, required this.content});
+  NewsItem({
+    required this.title,
+    required this.content,
+    this.titleZh,
+    this.contentZh,
+    this.pageContent,
+  });
 
   final String title;
   final String content;
+  final String? titleZh;
+  final String? contentZh;
+  final String? pageContent;
 }
 
 // ==================== 用户设置 ====================
@@ -1171,23 +1224,27 @@ class UserSettings {
   String avatarPath;
   String interest;
   int newsIntervalMinutes;
+  bool hasCompletedSetup;
 
   UserSettings({
     this.avatarPath = 'assets/images/avatar2.png',
     this.interest = 'AI',
     this.newsIntervalMinutes = 30,
+    this.hasCompletedSetup = false,
   });
 
   Map<String, dynamic> toJson() => {
     'avatarPath': avatarPath,
     'interest': interest,
     'newsIntervalMinutes': newsIntervalMinutes,
+    'hasCompletedSetup': hasCompletedSetup,
   };
 
   factory UserSettings.fromJson(Map<String, dynamic> json) => UserSettings(
     avatarPath: json['avatarPath'] ?? 'assets/images/avatar2.png',
     interest: json['interest'] ?? 'AI',
     newsIntervalMinutes: json['newsIntervalMinutes'] ?? 30,
+    hasCompletedSetup: json['hasCompletedSetup'] ?? false,
   );
 }
 
@@ -1658,6 +1715,7 @@ class _InitialSetupPageState extends State<InitialSetupPage> {
     manager.settings.avatarPath = _selectedAvatar;
     manager.settings.interest = _selectedInterest;
     manager.settings.newsIntervalMinutes = _newsInterval.toInt();
+    manager.settings.hasCompletedSetup = true; // 标记已完成初始设置
     await manager.saveSettings();
     manager.notifyListeners();
 
@@ -2063,7 +2121,17 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
               ],
             ),
           ),
-          const SizedBox(height: 50),
+          const SizedBox(height: 30),
+          // 清除缓存按钮
+          TextButton.icon(
+            onPressed: () => _showClearCacheDialog(),
+            icon: const Icon(Icons.delete_outline, color: Colors.red),
+            label: const Text(
+              '清除所有缓存',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+          const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
               _saveCurrentTabSettings();
@@ -2079,6 +2147,74 @@ class _SettingsTabPageState extends State<SettingsTabPage> {
         ],
       ),
     );
+  }
+
+  void _showClearCacheDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清除缓存'),
+        content: const Text('确定要清除所有聊天记录和设置吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _clearAllCache();
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearAllCache() async {
+    try {
+      // 删除缓存目录
+      final appDataDir = Directory.systemTemp;
+      final chatDir = Directory('${appDataDir.path}/flutter_chat');
+      if (await chatDir.exists()) {
+        await chatDir.delete(recursive: true);
+      }
+
+      // 重置设置
+      final manager = SettingsManager();
+      manager.settings = UserSettings();
+      await manager.saveSettings();
+      manager.notifyListeners();
+
+      // 更新本地状态
+      setState(() {
+        _selectedAvatar = manager.settings.avatarPath;
+        _selectedInterest = manager.settings.interest;
+        _newsInterval = manager.settings.newsIntervalMinutes.toDouble();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('缓存已清除'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xFF0A84FF),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('清除缓存失败: $e'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _saveCurrentTabSettings() async {

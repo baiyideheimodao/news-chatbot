@@ -1,10 +1,10 @@
-; Inno Setup 安装脚本 - 悬浮聊天
+; Inno Setup 安装脚本 - 万物一心
 ; 下载 Inno Setup: https://jrsoftware.org/isdl.php
 
-#define MyAppName "悬浮聊天"
-#define MyAppVersion "1.0.0"
-#define MyAppPublisher "内部工具"
-#define MyAppExeName "flutter_desktop_chat.exe"
+#define MyAppName "万物一心"
+#define MyAppVersion "1.1.0"
+#define MyAppPublisher "灵匠科技-万物一心团队-内部工具-ai比赛版"
+#define MyAppExeName "wwyx_chat.exe"
 
 [Setup]
 AppId={{FLOATING-CHAT-2024-INTERNAL}}
@@ -14,7 +14,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=installer
-OutputBaseFilename=悬浮聊天_v{#MyAppVersion}_安装程序
+OutputBaseFilename=万物一心_v{#MyAppVersion}_安装程序
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
