@@ -2,7 +2,7 @@
 ; 下载 Inno Setup: https://jrsoftware.org/isdl.php
 
 #define MyAppName "万物一心"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "灵匠科技-万物一心团队-内部工具-ai比赛版"
 #define MyAppExeName "wwyx_chat.exe"
 
