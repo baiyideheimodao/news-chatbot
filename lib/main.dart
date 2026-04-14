@@ -1091,7 +1091,7 @@ class ChatBubble extends StatelessWidget {
                       : null,
                   color: message.isMine ? null : const Color(0xFFE5E5EA),
                 ),
-                child: Text(
+                child: SelectableText(
                   message.text,
                   style: TextStyle(
                     fontSize: 16,
@@ -1213,7 +1213,7 @@ class NewsMessageBubble extends StatelessWidget {
                       Icon(Icons.campaign, color: Colors.blue[600], size: 18),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
+                        child: SelectableText(
                           message.newsTitle ?? '新闻推送',
                           style: TextStyle(
                             fontSize: 15,
@@ -1225,7 +1225,7 @@ class NewsMessageBubble extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(
+                  SelectableText(
                     message.newsContent ?? '',
                     style: TextStyle(
                       fontSize: 14,
@@ -1241,7 +1241,7 @@ class NewsMessageBubble extends StatelessWidget {
                       color: Colors.grey[300],
                     ),
                     const SizedBox(height: 12),
-                    Text(
+                    SelectableText(
                       message.newsTitleZh ?? '',
                       style: TextStyle(
                         fontSize: 14,
@@ -1250,7 +1250,7 @@ class NewsMessageBubble extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
+                    SelectableText(
                       message.newsContentZh ?? '',
                       style: TextStyle(
                         fontSize: 13,
